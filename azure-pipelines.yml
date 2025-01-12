@@ -1,19 +1,83 @@
-# Starter pipeline
-# Start with a minimal pipeline that you can customize to build and deploy your code.
-# Add steps that build, run tests, deploy, and more:
-# https://aka.ms/yaml
+# Pipeline con Azure DevOps
+# Grupo 06! ->  @nveroitza y @skravetz
 
 trigger:
-- main
+  - main
 
 pool:
-  vmImage: ubuntu-latest
+  vmImage: "ubuntu-latest"
+
+variables:
+  azureSubscription: "Grupo06-PipelineConnection-IaC"
+  location: "eastus2"
+  resourceGroupName: "RG2-Grupo06Devops001A"
+  virtualNetworkName: "Grupo06RedVirtual-Devops001A"
+  subnetName: "subnet-grupo06"
+  addressPrefix: "10.0.0.0/24"
+  subnetPrefix: "10.0.0.0/26"
+  securityGroupName: "Grupo06NetworkSecurityGroup-Devops001A"
+  publicIpName: "PublicIP-2-taller-DevOps"
+  vmName: "VM-2-taller-DevOps"
+  vmSize: "Standard_B1s"
+  adminUsername: "vm1-grupo6-user"
+  adminPassword: "Password1234$!!"
+
+  # Variables de la imagen
+  imagePublisher: "Canonical"
+  imageOffer: "0001-com-ubuntu-server-jammy"
+  imageSku: "22_04-lts-gen2"
+  imageVersion: "latest" # Versión específica de la imagen
 
 steps:
-- script: echo Hello, world!
-  displayName: 'Run a one-line script'
+  - task: AzureCLI@2
+    inputs:
+      azureSubscription: $(azureSubscription)
+      scriptType: "bash"
+      scriptLocation: "inlineScript"
+      inlineScript: |
+        set -e  # Termina el script si cualquier comando falla
 
-- script: |
-    echo Add other tasks to build, test, and deploy your project.
-    echo See https://aka.ms/yaml
-  displayName: 'Run a multi-line script'
+        # Crear un grupo de recursos
+        echo "Creando grupo de recursos..."
+        az group create --name $(resourceGroupName) --location "$(location)"
+        echo "Grupo de recursos creado."
+
+        # Crear una red virtual con un segmento de red
+        echo "Creando red virtual..."
+        az network vnet create --resource-group $(resourceGroupName) --name $(virtualNetworkName) --address-prefix $(addressPrefix) --subnet-name $(subnetName) --subnet-prefix $(subnetPrefix)
+        echo "Red virtual creada."
+        az network vnet wait --resource-group $(resourceGroupName) --name $(virtualNetworkName) --created
+
+        # Crear un grupo de seguridad de red
+        echo "Creando grupo de seguridad de red..."
+        az network nsg create --resource-group $(resourceGroupName) --name $(securityGroupName)
+        echo "Grupo de seguridad de red creado."
+        az network nsg wait --resource-group $(resourceGroupName) --name $(securityGroupName) --created
+
+        # Permitir acceso a los puertos 22 y 80
+        echo "Configurando reglas de NSG..."
+        az network nsg rule create --resource-group $(resourceGroupName) --nsg-name $(securityGroupName) --name AllowSSH --protocol tcp --direction inbound --priority 1000 --source-address-prefix '*' --source-port-range '*' --destination-address-prefix '*' --destination-port-range 22 --access allow
+        az network nsg rule create --resource-group $(resourceGroupName) --nsg-name $(securityGroupName) --name AllowHTTP --protocol tcp --direction inbound --priority 1001 --source-address-prefix '*' --source-port-range '*' --destination-address-prefix '*' --destination-port-range 80 --access allow
+        az network nsg rule create --resource-group $(resourceGroupName) --nsg-name $(securityGroupName) --name AllowICMP --protocol icmp --direction inbound --priority 1002 --source-address-prefix '*' --source-port-range '*' --destination-address-prefix '*' --destination-port-range '*' --access allow
+
+        echo "Reglas de NSG configuradas."
+
+        # Crear una dirección IP pública
+        echo "Creando IP pública..."
+        az network public-ip create --resource-group $(resourceGroupName) --name $(publicIpName) --sku Standard --allocation-method Static
+        echo "IP pública creada."
+        az network public-ip wait --resource-group $(resourceGroupName) --name $(publicIpName) --created
+
+        # Crear la máquina virtual con la IP pública asignada, usando los parámetros de imagen especificados
+        echo "Creando máquina virtual..."
+        az vm create --resource-group $(resourceGroupName) --name $(vmName) --image $(imagePublisher):$(imageOffer):$(imageSku):$(imageVersion) --size $(vmSize) --admin-username $(adminUsername) --admin-password $(adminPassword) --vnet-name $(virtualNetworkName) --subnet $(subnetName) --nsg $(securityGroupName) --public-ip-address $(publicIpName)
+        echo "Máquina virtual creada."
+        az vm wait --resource-group $(resourceGroupName) --name $(vmName) --created
+
+        # Instalar Apache y configurar la página de prueba
+        echo "Instalando Apache y configurando la página de prueba..."
+        az vm run-command invoke --resource-group $(resourceGroupName) --name $(vmName) --command-id RunShellScript --scripts "sudo apt update && sudo apt install -y apache2"
+        az vm run-command invoke --resource-group $(resourceGroupName) --name $(vmName) --command-id RunShellScript --scripts "sudo echo "AddDefaultCharset UTF-8"|sudo tee /etc/apache2/conf-available/charset.conf"
+        az vm run-command invoke --resource-group $(resourceGroupName) --name $(vmName) --command-id RunShellScript --scripts "sudo systemctl restart apache2"
+        az vm run-command invoke --resource-group $(resourceGroupName) --name $(vmName) --command-id RunShellScript --scripts "echo '<b>Hola DevOps, este es el grupo 06!</b> Esta este es el servidor Apache corriendo en una VM en Azure, desplegada automáticamente usando infraestructura como código (IaC) con Azure DevOps utilizando agentes de Azure Pipelines! ' | sudo tee /var/www/html/index.html"
+        echo "Apache instalado y página de bienvenida configurada."
