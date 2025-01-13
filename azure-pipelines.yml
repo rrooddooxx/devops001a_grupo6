@@ -21,6 +21,7 @@ variables:
   vmSize: "Standard_B1s"
   adminUsername: "vm1-grupo6-user"
   adminPassword: "Password1234$!!"
+  environment: Grupo06-Environment
 
   # Variables de la imagen
   imagePublisher: "Canonical"
