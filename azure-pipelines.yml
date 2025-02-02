@@ -10,7 +10,7 @@ pool:
 variables:
   azureSubscription: "Grupo06-PipelineConnection-IaC"
   location: "eastus2"
-  resourceGroupName: "RG2-Grupo06Devops001A"
+  resourceGroupName: "RG3-Grupo06Devops001A"
   virtualNetworkName: "Grupo06RedVirtual-Devops001A"
   subnetName: "subnet-grupo06"
   addressPrefix: "10.0.0.0/24"
